@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Voice pipeline - Step 2 mic capture</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+  button { padding: 10px 20px; margin-right: 8px; font-size: 15px; }
+  #talk { user-select: none; }
+  #talk.recording { background: #d9453b; color: white; }
+  pre { background: #f4f4f4; padding: 12px; border-radius: 6px; min-height: 160px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>Voice pipeline - Step 2 mic capture</h1>
+  <p>Hold the button to talk. Audio is captured at your device's native sample
+     rate, converted to 16-bit PCM in an AudioWorklet, and streamed to the
+     server over the WebSocket as you speak.</p>
+  <button id="connect">Connect</button>
+  <button id="talk" disabled>Hold to talk</button>
+  <pre id="log"></pre>
+
+  <script>
+    const log = (msg) => {
+      const el = document.getElementById("log");
+      el.textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    };
+
+    let ws;
+    let audioContext;
+    let workletNode;
+    let micStream;
+    let chunksSent = 0;
+    let bytesSent = 0;
+    let recording = false;
+
+    document.getElementById("connect").onclick = async () => {
+      ws = new WebSocket("ws://localhost:8080/ws");
+
+      ws.onopen = async () => {
+        log("connected to server");
+
+        // Set up the audio graph once, up front, so there's no first-press
+        // latency from asking for mic permission or loading the worklet
+        // module mid-recording.
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+
+        audioContext = new AudioContext();
+        await audioContext.audioWorklet.addModule("pcm-worklet-processor.js");
+
+        const source = audioContext.createMediaStreamSource(micStream);
+        workletNode = new AudioWorkletNode(audioContext, "pcm-worklet-processor");
+
+        // Deliberately NOT connected to audioContext.destination --
+        // we don't want to route the mic straight back to the speakers.
+        source.connect(workletNode);
+
+        workletNode.port.onmessage = (event) => {
+          if (ws.readyState === WebSocket.OPEN && recording) {
+            ws.send(event.data); // binary PCM16 chunk
+            chunksSent++;
+            bytesSent += event.data.byteLength;
+          }
+        };
+
+        log(`mic ready (sample rate: ${audioContext.sampleRate} Hz)`);
+        document.getElementById("talk").disabled = false;
+      };
+
+      ws.onmessage = (event) => log(`received: ${event.data}`);
+      ws.onclose = () => log("disconnected");
+      ws.onerror = (err) => log(`error: ${err.message || "unknown"}`);
+    };
+
+    const talkBtn = document.getElementById("talk");
+
+    function startTalking() {
+      if (recording) return;
+      recording = true;
+      chunksSent = 0;
+      bytesSent = 0;
+      talkBtn.classList.add("recording");
+      ws.send(JSON.stringify({ type: "session_start", sample_rate: audioContext.sampleRate }));
+      log("recording started");
+    }
+
+    function stopTalking() {
+      if (!recording) return;
+      recording = false;
+      talkBtn.classList.remove("recording");
+      ws.send(JSON.stringify({ type: "session_end" }));
+      log(`recording stopped (${chunksSent} chunks, ${bytesSent} bytes sent)`);
+    }
+
+    // Mouse (desktop)
+    talkBtn.addEventListener("mousedown", startTalking);
+    talkBtn.addEventListener("mouseup", stopTalking);
+    talkBtn.addEventListener("mouseleave", () => { if (recording) stopTalking(); });
+
+    // Touch (mobile) -- preventDefault stops the synthetic mousedown/up
+    // that touch events also fire, which would otherwise double-trigger.
+    talkBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startTalking(); });
+    talkBtn.addEventListener("touchend", (e) => { e.preventDefault(); stopTalking(); });
+  </script>
+</body>
+</html>

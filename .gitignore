@@ -1,0 +1,23 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment variables / secrets (API keys for Deepgram, LLM, TTS go here later)
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS cruft
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
