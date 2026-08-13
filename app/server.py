@@ -1,14 +1,17 @@
 import json
 import logging
+import base64
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
+from app.tts import CartesiaTTS, OUTPUT_SAMPLE_RATE
 
 from app.asr import DeepgramASR
 from app.events import EventType
 from app.llm import GroqReasoner
 from app.session import Session, SessionState
+#tts = CartesiaTTS()
 
 load_dotenv()  # reads DEEPGRAM_API_KEY / ANTHROPIC_API_KEY (and later TTS keys) from .env
 
@@ -23,6 +26,7 @@ app = FastAPI()
 # a bad/missing ANTHROPIC_API_KEY fails loudly at startup instead of quietly
 # per-request later.
 llm = GroqReasoner()
+tts = CartesiaTTS()
 
 # session_id -> Session, so later stages (TTS wiring) can look up state
 # without threading it through every function call.
@@ -126,6 +130,18 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         EventType.LLM_DONE, request_id=request_id, text=reply
                     )
                     log.info(f"[llm_done] session={session.id} reply={reply!r}")
+                    session.set_state(SessionState.SPEAKING)
+
+                    async def send_audio_chunk(chunk: bytes, _session=session, _rid=request_id) -> None:
+                        await _session.send(
+                            EventType.TTS_CHUNK,
+                            request_id=_rid,
+                            audio_b64=base64.b64encode(chunk).decode("ascii"),
+                            sample_rate=OUTPUT_SAMPLE_RATE,
+                        )
+
+                    await tts.synthesize(reply, on_audio_chunk=send_audio_chunk)
+                    await session.send(EventType.TTS_DONE, request_id=request_id)
                 except Exception as exc:
                     log.error(f"[llm_error] session={session.id} {exc}")
                     await session.send(EventType.ERROR, message=str(exc))

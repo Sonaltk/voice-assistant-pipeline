@@ -70,12 +70,46 @@
         document.getElementById("talk").disabled = false;
       };
 
-      ws.onmessage = (event) => log(`received: ${event.data}`);
+      
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "tts_chunk") {
+          playPCM16Chunk(data.audio_b64, data.sample_rate);
+          log(`playing audio chunk (${data.audio_b64.length} b64 chars)`);
+        } else {
+          log(`received: ${event.data}`);
+        }
+      };
       ws.onclose = () => log("disconnected");
       ws.onerror = (err) => log(`error: ${err.message || "unknown"}`);
     };
 
     const talkBtn = document.getElementById("talk");
+    let nextPlayTime = 0;
+
+    function playPCM16Chunk(base64Audio, sampleRate) {
+      const binary = atob(base64Audio);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      const int16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+      const buffer = audioContext.createBuffer(1, float32.length, sampleRate);
+      buffer.copyToChannel(float32, 0);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioContext.destination);
+
+      // Schedule playback right after whatever's currently queued, not "now" --
+      // this is what makes back-to-back chunks sound like one continuous
+      // sentence instead of overlapping or leaving gaps.
+      const startAt = Math.max(audioContext.currentTime, nextPlayTime);
+      source.start(startAt);
+      nextPlayTime = startAt + buffer.duration;
+    }
 
     function startTalking() {
       if (recording) return;
