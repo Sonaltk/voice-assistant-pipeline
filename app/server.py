@@ -93,6 +93,13 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             elif msg_type == EventType.SESSION_END.value:
                 session.set_state(SessionState.IDLE)
 
+                # Fired first, before anything else -- this is the reference
+                # point Phase 2's ASR-latency calculation measures from: the
+                # exact moment the user stopped talking.
+                await session.send(
+                    EventType.AUDIO_END, request_id=session.current_request_id
+                )
+
                 transcript = ""
                 if session.asr is not None:
                     transcript = await session.asr.finish()

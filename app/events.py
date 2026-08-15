@@ -24,6 +24,7 @@ class EventType(StrEnum):
     SESSION_END = "session_end"
 
     # server -> client (and internally, stage -> orchestrator)
+    AUDIO_END = "audio_end"
     ASR_PARTIAL = "asr_partial"  # interim transcript, not finalized
     ASR_FINAL = "asr_final"  # finalized utterance, triggers the LLM call
     LLM_TOKEN = "llm_token"  # one streamed token/chunk from the LLM

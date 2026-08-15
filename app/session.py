@@ -4,7 +4,7 @@ simple state machine; ASR/LLM/TTS handles and conversation history get
 attached to this same object in later steps rather than introducing a
 second place to look for "what's happening in this call".
 """
-
+from app.metrics import log_event
 import uuid
 from enum import StrEnum
 
@@ -39,4 +39,5 @@ class Session:
 
     async def send(self, event_type: EventType, **payload) -> None:
         event = make_event(event_type, self.id, **payload)
+        log_event(event)  # durable copy for Phase 2's latency reducer/dashboard
         await self.ws.send_json(event)
