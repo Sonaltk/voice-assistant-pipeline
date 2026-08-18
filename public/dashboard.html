@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Voice pipeline - latency dashboard</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
+  h1 { margin-bottom: 4px; }
+  .subtitle { color: #666; margin-bottom: 24px; }
+  button { padding: 8px 16px; margin-bottom: 20px; }
+
+  .legend { display: flex; gap: 16px; margin-bottom: 20px; font-size: 13px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+
+  .request-row { margin-bottom: 18px; padding: 12px; background: #fafafa; border-radius: 8px; border: 1px solid #eee; }
+  .request-meta { display: flex; justify-content: space-between; font-size: 13px; color: #444; margin-bottom: 8px; }
+  .request-id { font-family: monospace; color: #888; }
+  .bar { display: flex; height: 26px; border-radius: 4px; overflow: hidden; background: #eee; }
+  .seg { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; color: white; white-space: nowrap; overflow: hidden; }
+  .seg.gap { background: repeating-linear-gradient(45deg, #ddd, #ddd 4px, #e8e8e8 4px, #e8e8e8 8px); color: #999; }
+
+  .empty { color: #888; padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Latency waterfall</h1>
+  <p class="subtitle">Per-request breakdown, most recent first. Click Refresh after making new requests.</p>
+  <button id="refresh">Refresh</button>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#3b82f6"></span> ASR latency</span>
+    <span><span class="swatch" style="background:#f59e0b"></span> LLM time-to-first-token</span>
+    <span><span class="swatch" style="background:#fbbf24"></span> LLM generation</span>
+    <span><span class="swatch" style="background:#10b981"></span> TTS time-to-first-byte</span>
+    <span><span class="swatch" style="background:#34d399"></span> TTS synthesis</span>
+    <span><span class="swatch gap" style="width:12px;height:12px;border-radius:2px;"></span> gap / unmeasured</span>
+  </div>
+
+  <div id="requests"></div>
+
+  <script>
+    const STAGES = [
+      { key: "asr_latency_ms", label: "ASR", color: "#3b82f6" },
+      { key: "llm_ttft_ms", label: "LLM TTFT", color: "#f59e0b" },
+      { key: "llm_total_ms", label: "LLM gen", color: "#fbbf24" },
+      { key: "tts_ttfb_ms", label: "TTS TTFB", color: "#10b981" },
+      { key: "tts_total_ms", label: "TTS synth", color: "#34d399" },
+    ];
+
+    function fmtMs(ms) {
+      if (ms === null || ms === undefined) return "?";
+      return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`;
+    }
+
+    function renderRequest(req) {
+      const row = document.createElement("div");
+      row.className = "request-row";
+
+      const meta = document.createElement("div");
+      meta.className = "request-meta";
+      meta.innerHTML = `
+        <span class="request-id">${req.request_id.slice(0, 8)}...</span>
+        <span><strong>${fmtMs(req.total_ms)}</strong> total</span>
+      `;
+      row.appendChild(meta);
+
+      const bar = document.createElement("div");
+      bar.className = "bar";
+
+      const knownTotal = STAGES.reduce((sum, s) => sum + (req[s.key] || 0), 0);
+      const total = req.total_ms && req.total_ms > knownTotal ? req.total_ms : knownTotal;
+
+      if (total <= 0) {
+        bar.innerHTML = `<div class="seg gap" style="width:100%">no timing data</div>`;
+      } else {
+        for (const stage of STAGES) {
+          const value = req[stage.key];
+          if (!value) continue;
+          const pct = (value / total) * 100;
+          const seg = document.createElement("div");
+          seg.className = "seg";
+          seg.style.width = `${pct}%`;
+          seg.style.background = stage.color;
+          seg.title = `${stage.label}: ${fmtMs(value)}`;
+          seg.textContent = pct > 8 ? fmtMs(value) : "";
+          bar.appendChild(seg);
+        }
+        const gap = total - knownTotal;
+        if (gap > 0) {
+          const seg = document.createElement("div");
+          seg.className = "seg gap";
+          seg.style.width = `${(gap / total) * 100}%`;
+          seg.title = `Unmeasured / overhead: ${fmtMs(gap)}`;
+          bar.appendChild(seg);
+        }
+      }
+
+      row.appendChild(bar);
+      return row;
+    }
+
+    async function loadMetrics() {
+      const container = document.getElementById("requests");
+      container.innerHTML = "";
+
+      const res = await fetch("/api/metrics");
+      const requests = await res.json();
+
+      if (requests.length === 0) {
+        container.innerHTML = `<div class="empty">No requests logged yet. Go talk to the assistant, then refresh.</div>`;
+        return;
+      }
+
+      for (const req of requests) {
+        container.appendChild(renderRequest(req));
+      }
+    }
+
+    document.getElementById("refresh").onclick = loadMetrics;
+    loadMetrics();
+  </script>
+</body>
+</html>

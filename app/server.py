@@ -11,6 +11,7 @@ from app.asr import DeepgramASR
 from app.events import EventType
 from app.llm import GroqReasoner
 from app.session import Session, SessionState
+from app.metrics_reducer import all_breakdowns
 #tts = CartesiaTTS()
 
 load_dotenv()  # reads DEEPGRAM_API_KEY / ANTHROPIC_API_KEY (and later TTS keys) from .env
@@ -176,6 +177,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 # instead of file://, which AudioWorklet requires to load reliably (it needs
 # a "secure context" -- localhost counts, file:// often doesn't). Mounted
 # last so it acts as a catch-all without shadowing the /ws route above.
+@app.get("/api/metrics")
+async def get_metrics():
+    return all_breakdowns()
 app.mount("/", StaticFiles(directory="public", html=True), name="public")
 
 
