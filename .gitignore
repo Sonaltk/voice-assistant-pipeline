@@ -21,3 +21,7 @@ __pycache__/
 # Editor
 .vscode/
 .idea/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

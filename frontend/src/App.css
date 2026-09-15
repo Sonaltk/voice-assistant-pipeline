@@ -1,0 +1,29 @@
+.app {
+  font-family: system-ui, sans-serif;
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 0 16px;
+}
+
+button {
+  padding: 10px 20px;
+  margin-right: 8px;
+  font-size: 15px;
+}
+
+.talk {
+  user-select: none;
+}
+
+.talk.recording {
+  background: #d9453b;
+  color: white;
+}
+
+.log {
+  background: #f4f4f4;
+  padding: 12px;
+  border-radius: 6px;
+  min-height: 160px;
+  white-space: pre-wrap;
+}

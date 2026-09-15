@@ -180,7 +180,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 @app.get("/api/metrics")
 async def get_metrics():
     return all_breakdowns()
-app.mount("/", StaticFiles(directory="public", html=True), name="public")
+app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="public")
 
 
 if __name__ == "__main__":
